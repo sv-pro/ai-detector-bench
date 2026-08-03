@@ -31,6 +31,62 @@ DEFAULT_OBSERVER = "tiiuae/falcon-7b"
 DEFAULT_PERFORMER = "tiiuae/falcon-7b-instruct"
 SMALL_PAIR = ("gpt2", "gpt2-medium")
 
+# Published decision thresholds from the reference implementation, selected with the
+# Falcon-7B pair at bfloat16. They are on the *native* scale (low = machine), so compare
+# `meta["binoculars_raw"]` against them, not `Verdict.score`, which is negated. They are
+# recorded rather than applied: a threshold chosen on one model pair and one corpus does
+# not transfer, and `detbench` reports scores rather than verdicts.
+REFERENCE_ACCURACY_THRESHOLD = 0.9015310749276843  # optimised for F1
+REFERENCE_FPR_THRESHOLD = 0.8536432310785527  # optimised for low FPR, chosen at 0.01%
+
+
+def _perplexity(logits, input_ids, attention_mask) -> float:
+    """Mean token-level negative log-likelihood, masked to real tokens.
+
+    Transcribed from the reference `metrics.perplexity`. Note whose logits arrive here:
+    the caller passes the **performer's**.
+    """
+    import torch
+
+    shifted_logits = logits[..., :-1, :].contiguous().float()
+    shifted_labels = input_ids[..., 1:].contiguous()
+    shifted_mask = attention_mask[..., 1:].contiguous()
+
+    ce = torch.nn.functional.cross_entropy(
+        shifted_logits.transpose(1, 2), shifted_labels, reduction="none"
+    )
+    return ((ce * shifted_mask).sum(1) / shifted_mask.sum(1)).item()
+
+
+def _cross_entropy(p_logits, q_logits, input_ids, pad_token_id: int) -> float:
+    """Mean cross-entropy of the performer's distribution against the observer's.
+
+    Transcribed from the reference `metrics.entropy`, including two choices that look
+    like oversights but must be matched for the numbers to agree:
+
+    - **No shifting.** Unlike the perplexity term, this runs over every position of the
+      full sequence.
+    - **The mask is `input_ids != pad_token_id`**, not the attention mask. When the
+      tokenizer has no pad token, `pad_token` is set to `eos_token`, so a genuine
+      end-of-text token occurring inside the document is masked out of the denominator.
+      That is the reference's behaviour, and deviating from it would mean this detector
+      is no longer the published one.
+    """
+    import torch
+
+    vocab_size = p_logits.shape[-1]
+    total_tokens = q_logits.shape[-2]
+
+    p_proba = torch.softmax(p_logits.float(), dim=-1).view(-1, vocab_size)
+    q_scores = q_logits.float().view(-1, vocab_size)
+
+    ce = torch.nn.functional.cross_entropy(
+        input=q_scores, target=p_proba, reduction="none"
+    ).view(-1, total_tokens)
+
+    padding_mask = (input_ids != pad_token_id).type(torch.uint8)
+    return ((ce * padding_mask).sum(1) / padding_mask.sum(1)).item()
+
 
 class BinocularsDetector:
     """Cross-perplexity ratio detector.
@@ -76,6 +132,16 @@ class BinocularsDetector:
         dtype = torch.float16 if self.device == "cuda" else torch.float32
 
         self._tokenizer = AutoTokenizer.from_pretrained(self.observer_name)
+        # Both models must share a vocabulary: the denominator compares the observer's
+        # probability distribution against the performer's over the *same* index space,
+        # so mismatched tokenizers produce a number that looks fine and means nothing.
+        # The reference implementation asserts this; skipping it was a real hole.
+        performer_tok = AutoTokenizer.from_pretrained(self.performer_name)
+        if self._tokenizer.vocab != performer_tok.vocab:
+            raise ValueError(
+                f"tokenizers differ between {self.observer_name} and {self.performer_name}; "
+                "Binoculars requires a shared vocabulary"
+            )
         if self._tokenizer.pad_token is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
         self._observer = AutoModelForCausalLM.from_pretrained(
@@ -113,22 +179,17 @@ class BinocularsDetector:
             obs_logits = self._observer(**enc).logits
             perf_logits = self._performer(**enc).logits
 
-        # Shift so position i predicts token i+1.
-        obs = obs_logits[:, :-1, :].float()
-        perf = perf_logits[:, :-1, :].float()
-        targets = ids[:, 1:]
-
-        obs_logprobs = torch.log_softmax(obs, dim=-1)
-
-        # log-perplexity: the observer's negative log-likelihood of the actual tokens.
-        nll = -obs_logprobs.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
-        log_ppl = nll.mean().item()
-
-        # Cross-perplexity: the observer's *predicted distribution* scored against the
-        # performer's. This is the denominator that cancels inherent predictability.
-        perf_logprobs = torch.log_softmax(perf, dim=-1)
-        obs_probs = obs_logprobs.exp()
-        x_ppl = -(obs_probs * perf_logprobs).sum(dim=-1).mean().item()
+        # Both quantities below follow the reference implementation exactly
+        # (ahans30/Binoculars, `binoculars/metrics.py`). Two details are easy to get
+        # wrong and were wrong here until validation caught them:
+        #
+        #   1. The numerator is the **performer's** perplexity, not the observer's. The
+        #      observer appears only inside the denominator, as the distribution the
+        #      performer is scored against.
+        #   2. The denominator is computed on **unshifted** logits over the full
+        #      sequence, while the numerator is shifted. They deliberately do not align.
+        log_ppl = _perplexity(perf_logits, ids, enc.attention_mask)
+        x_ppl = _cross_entropy(obs_logits, perf_logits, ids, self._tokenizer.pad_token_id)
 
         if x_ppl <= 0:
             return Verdict.refuse(

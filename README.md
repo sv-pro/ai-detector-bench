@@ -134,9 +134,17 @@ type error rather than a style guideline.
 - **Detection failures are not evenly distributed.** False positives fall hardest on
   non-native English writers and on formulaic human prose. A tool that is 99% accurate
   overall can still be systematically wrong about one group of people.
-- **The model-bearing detectors are not yet validated** against their reference
-  implementations. Binoculars and Fast-DetectGPT are implemented but unchecked, so no
-  leaderboard row may be published from them. This is a release blocker, tracked as such.
+- **Binoculars is validated at the algorithm level, not reproduced.** `scripts/validate_binoculars.py`
+  runs a verbatim transcription of the reference as an independent code path and agrees to
+  **2.9e-08**. That confirms we compute the right quantity. It does **not** reproduce the
+  paper's >90% TPR at 0.01% FPR, which needs the Falcon-7B pair at bfloat16 (~28 GB) and a
+  GPU this project does not have. Two different claims; only the first is done.
+  **Fast-DetectGPT is not validated at all.**
+- **Validation found our Binoculars was wrong twice** — perplexity taken from the observer
+  instead of the performer, and a cross-entropy term shifted when the reference does not
+  shift it. Both produced plausible numbers that were 4.6–12.4% off, more than the 5.6% gap
+  between the reference's own two published thresholds. This is why unvalidated detectors
+  are barred from the leaderboard rather than merely flagged.
 - **The shipped fixture is a smoke test, not an evaluation set.** RAID is wired up; MAGE
   and PADBen are not — see [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
 - **This project has already been wrong once in public, and left the evidence in.** An

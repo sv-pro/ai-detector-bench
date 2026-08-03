@@ -207,11 +207,9 @@ against the person who wrote them.
 Stated plainly, because a benchmark that hides its own limits has no standing to measure
 anyone else's.
 
-1. **The model-bearing detectors are unvalidated.** `binoculars.py` and
-   `fast_detectgpt.py` implement the published algorithms, but neither has been checked
-   against its reference implementation. Until `scripts/validate.py` reproduces published
-   AUROC on a shared slice, no number from either may appear in anything public. **This is
-   a release blocker, not a nice-to-have.**
+1. **Binoculars is validated at the algorithm level; Fast-DetectGPT is not validated at
+   all.** See § 6 below — the distinction between "computes the right quantity" and
+   "reproduces the paper's numbers" is doing real work there, and only the first is done.
 2. **No real corpus is loaded.** Everything above describes how the harness measures; it
    has not yet measured anything at scale.
 3. **The unfitted stylometric baseline currently scores below chance** on the smoke
@@ -227,6 +225,65 @@ anyone else's.
    heavily on non-native English writers. A benchmark that leads on false-positive harm
    and does not measure this specific harm is incomplete, and this is the highest-priority
    gap in the list.
+
+## 6. Validation status
+
+Two different claims get conflated as "validated", so this section separates them.
+
+**(a) Algorithmic equivalence** — does our code compute the same quantity as the reference?
+**(b) Reproduction** — do we get the paper's reported numbers?
+
+| Detector | (a) equivalence | (b) reproduction |
+|---|---|---|
+| `binoculars` | ✅ 2026-08-02, agreement to **2.9e-08** | ❌ blocked on hardware |
+| `fast-detectgpt` | ❌ not started | ❌ not started |
+| `stylometric` | n/a — ours, no reference exists | n/a |
+
+### Binoculars: what the check does
+
+`scripts/validate_binoculars.py` transcribes `binoculars/metrics.py` and
+`binoculars/detector.py` from ahans30/Binoculars verbatim and runs it as an **independent
+code path** against ours on the same inputs. A shared bug would have to be transcribed
+twice to survive. Worst absolute difference across four documents spanning 19th-century
+prose, model-shaped prose, technical writing and code: **2.9e-08**.
+
+Run it with `python scripts/validate_binoculars.py`.
+
+### What validation caught, which is the reason it is a release blocker
+
+Our implementation was **wrong in two substantive ways**, and both produced entirely
+plausible numbers:
+
+1. **The numerator took perplexity from the observer model.** The reference takes it from
+   the **performer**; the observer appears only inside the denominator, as the distribution
+   the performer is scored against. Easy to invert, because the paper's prose describes the
+   observer as the model that "computes the perplexity of the text."
+2. **The cross-entropy term was computed on shifted logits.** The reference does not shift
+   it — the numerator runs over T−1 positions and the denominator over T. They deliberately
+   do not align, which reads like an oversight until you match it and the numbers agree.
+
+Combined error on real text: **4.6% to 12.4%**. For scale, the gap between the reference's
+own published thresholds — 0.8536 (low-FPR) and 0.9015 (accuracy) — is 5.6%. The error was
+larger than the distance between the two operating modes, so it could flip a verdict.
+
+A third gap was closed at the same time: the reference asserts both models share a
+vocabulary and raises otherwise. Ours loaded only the observer's tokenizer, so a mismatched
+pair would have produced a confident, meaningless number. `tests/test_binoculars.py` pins
+all of this with synthetic logits so it runs offline.
+
+### What is still NOT established
+
+The published results — >90% TPR at 0.01% FPR, state-of-the-art zero-shot AUROC — were
+measured with **Falcon-7B / Falcon-7B-Instruct at bfloat16**, roughly 28 GB of weights
+across the pair. The machine this was developed on has a 4 GB GPU and 15 GB of RAM, so that
+configuration cannot run here. Equivalence was therefore confirmed on `gpt2` / `gpt2-medium`,
+which shares the reference's tokenizer-consistency requirement but is **not** the reference
+configuration.
+
+So: **the implementation is checked, the paper's results are not re-derived.** Different
+claims. A leaderboard row may cite our own measured numbers once the remaining detectors are
+equivalence-checked; it may **not** cite the paper's headline figures as though we had
+reproduced them.
 
 ## References
 

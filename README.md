@@ -139,7 +139,11 @@ type error rather than a style guideline.
   **2.9e-08**. That confirms we compute the right quantity. It does **not** reproduce the
   paper's >90% TPR at 0.01% FPR, which needs the Falcon-7B pair at bfloat16 (~28 GB) and a
   GPU this project does not have. Two different claims; only the first is done.
-  **Fast-DetectGPT is not validated at all.**
+  **Fast-DetectGPT is now validated too** — and its *exact* (0.00e+00) agreement is the
+  weaker result, because our criterion is a transcription and a transcription check cannot
+  detect an error that was transcribed. The check that counts compares the analytic form
+  against the reference's Monte-Carlo form, which converges to it at 1/√N (0.0587 → 0.0007
+  from 250 to 64,000 samples). Neither detector's published AUROC is reproduced.
 - **Validation found our Binoculars was wrong twice** — perplexity taken from the observer
   instead of the performer, and a cross-entropy term shifted when the reference does not
   shift it. Both produced plausible numbers that were 4.6–12.4% off, more than the 5.6% gap

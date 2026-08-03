@@ -236,7 +236,7 @@ Two different claims get conflated as "validated", so this section separates the
 | Detector | (a) equivalence | (b) reproduction |
 |---|---|---|
 | `binoculars` | ✅ 2026-08-02, agreement to **2.9e-08** | ❌ blocked on hardware |
-| `fast-detectgpt` | ❌ not started | ❌ not started |
+| `fast-detectgpt` | ✅ 2026-08-03, exact + Monte-Carlo cross-check | ❌ blocked on hardware |
 | `stylometric` | n/a — ours, no reference exists | n/a |
 
 ### Binoculars: what the check does
@@ -270,6 +270,52 @@ A third gap was closed at the same time: the reference asserts both models share
 vocabulary and raises otherwise. Ours loaded only the observer's tokenizer, so a mismatched
 pair would have produced a confident, meaningless number. `tests/test_binoculars.py` pins
 all of this with synthetic logits so it runs offline.
+
+### Fast-DetectGPT: why exact agreement was the *weaker* result
+
+`scripts/validate_fast_detectgpt.py` reports agreement of **0.00e+00** against the reference
+criterion, on both the shared-model and two-model configurations. That number looks better
+than Binoculars' 2.9e-08 and means less.
+
+Our criterion is a near-verbatim transcription of the reference's, so identical arithmetic
+in identical order produces bit-identical floats. **A transcription check cannot detect an
+error that was transcribed.** It validates the surrounding pipeline — tokenization,
+shift alignment, the two-model branch, dtype handling — and nothing about the mathematics.
+
+So the real check compares the analytic criterion against the reference's own **Monte-Carlo**
+criterion, the one the closed form replaces. If the derivation or our port of it were wrong,
+the two would diverge by far more than sampling error. Convergence on a single document,
+seed 0:
+
+| samples | Monte-Carlo | abs diff from analytic (0.383000) |
+|---:|---:|---:|
+| 250 | 0.324301 | 0.0587 |
+| 1,000 | 0.370584 | 0.0124 |
+| 4,000 | 0.369727 | 0.0133 |
+| 16,000 | 0.378378 | 0.0046 |
+| 64,000 | 0.382348 | **0.0007** |
+
+Clean 1/√N convergence to the analytic value. That is an independent confirmation of the
+closed form, and it is the only part of this detector's validation that could have failed.
+
+### What validation changed here
+
+Less dramatic than Binoculars, but not nothing:
+
+1. **Two-model support was missing.** The reference separates the *sampling* model (which
+   supplies the distribution the expectation is taken over) from the *scoring* model. Ours
+   supported only the shared case and described it as "the white-box setting used here" —
+   accurate, but it meant the detector could not run in the configuration the published
+   numbers come from (`gpt-j-6B` sampling, `gpt-neo-2.7B` scoring).
+2. **Per-position variance was clamped** to 1e-12. The reference does not clamp. Whenever
+   floating-point error produced a small negative term, the clamp silently changed the sum
+   and made this a different statistic. Removed; degenerate *totals* are now surfaced as a
+   refusal at the detector level instead, which does not alter any non-degenerate value.
+3. **The reference's fitted calibration is now recorded and used.** Their `local_infer.py`
+   publishes normal-distribution parameters per model pair, which convert a raw curvature
+   into a probability. `p_machine` is reported when the configured pair has published
+   parameters and stays `None` otherwise — the same calibration discipline as everywhere
+   else in this package, satisfied for the first time by someone else's fitted constants.
 
 ### What is still NOT established
 

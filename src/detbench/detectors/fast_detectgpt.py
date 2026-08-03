@@ -103,7 +103,11 @@ class FastDetectGPTDetector:
         min_tokens: int = 50,
         device: str | None = None,
         max_length: int = 512,
+        dtype: str = "float32",
     ):
+        # float32 by default so CPU and GPU runs agree and both match the configuration
+        # `scripts/validate_fast_detectgpt.py` checked. See the note in `binoculars.py`.
+        self.dtype = dtype
         self.scoring_model_name = scoring_model
         # Defaults to the shared-model case, which is a legitimate configuration and the
         # cheapest one; it is simply not the configuration the paper leads with.
@@ -139,7 +143,7 @@ class FastDetectGPTDetector:
 
         if self.device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        dtype = torch.float16 if self.device == "cuda" else torch.float32
+        dtype = getattr(torch, self.dtype)
 
         self._tokenizer = AutoTokenizer.from_pretrained(self.scoring_model_name)
         if self._tokenizer.pad_token is None:

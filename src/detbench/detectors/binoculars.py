@@ -102,12 +102,19 @@ class BinocularsDetector:
         min_tokens: int = 50,
         device: str | None = None,
         max_length: int = 512,
+        dtype: str = "float32",
     ):
         self.observer_name = observer
         self.performer_name = performer
         self.min_tokens = min_tokens
         self.device = device
         self.max_length = max_length
+        # Default float32 everywhere, so a CPU run and a GPU run of the same detector
+        # produce the same number and both match the configuration `scripts/validate_*`
+        # checked. An earlier version silently used float16 on CUDA, which would have
+        # meant the validated configuration and the benchmarked one were not the same.
+        # The reference's own default is bfloat16; selecting it here is a deliberate act.
+        self.dtype = dtype
         self._loaded = False
         self._observer = None
         self._performer = None
@@ -129,7 +136,7 @@ class BinocularsDetector:
 
         if self.device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        dtype = torch.float16 if self.device == "cuda" else torch.float32
+        dtype = getattr(torch, self.dtype)
 
         self._tokenizer = AutoTokenizer.from_pretrained(self.observer_name)
         # Both models must share a vocabulary: the denominator compares the observer's

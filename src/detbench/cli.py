@@ -118,7 +118,16 @@ def cmd_raid(args: argparse.Namespace) -> int:
         return 1
     print(raid.describe(docs), "\n")
 
-    detectors = [build_detector(k) for k in args.detectors]
+    # Only the model-bearing detectors take device/dtype; `stylometric` loads no model and
+    # would reject them. Listed explicitly rather than swallowed by a **kwargs, so a typo
+    # in a detector name fails loudly instead of being silently ignored.
+    MODEL_BEARING = {"binoculars", "binoculars-small", "fast-detectgpt"}
+    detectors = [
+        build_detector(
+            k, **({"device": args.device, "dtype": args.dtype} if k in MODEL_BEARING else {})
+        )
+        for k in args.detectors
+    ]
     reports = run(detectors, docs, args.attacks, seed=args.seed)
     print(render_table(reports))
     print("\nnotes:")
@@ -177,6 +186,12 @@ def main(argv: list[str] | None = None) -> int:
     rd.add_argument("--detectors", nargs="+", default=["stylometric"])
     rd.add_argument("--attacks", nargs="*", default=["homoglyph", "zero_width", "synonym"])
     rd.add_argument("--seed", type=int, default=0)
+    rd.add_argument("--device", default=None, help="cpu or cuda; default auto-detect")
+    rd.add_argument(
+        "--dtype",
+        default="float32",
+        help="float32 (default, matches the validated configuration), float16, bfloat16",
+    )
     rd.set_defaults(func=cmd_raid)
 
     sn = sub.add_parser(

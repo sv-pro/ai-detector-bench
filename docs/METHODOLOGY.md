@@ -73,6 +73,52 @@ Every attack is deterministic under a seed, so a published row is reproducible e
 document can be spotted: evasion that rises together with a high edit rate is a finding
 about text destruction, not about the detector.
 
+## 3b. Preprocessing sensitivity — the pipeline nobody writes down
+
+Attacks measure what an adversary can do to you. This slice measures what **you** do to
+yourself, and it is a separate module (`preprocessing.py`, `sensitivity.py`) rather than an
+attack, because the two answer different questions. An attack is adversarial and applied to
+machine text only. A preprocessor is a defender's choice applied uniformly to everything:
+strip the code blocks or don't, drop the front matter or don't, collapse the whitespace or
+don't. Nobody reports these choices, because they feel like plumbing.
+
+The headline is:
+
+    sensitivity_ratio = mean |score(variant) - score(raw)|  /  |mean(machine) - mean(human)|
+
+Above **1.0**, an undocumented pipeline decision moves the score further than the signal the
+detector is supposed to be measuring. At that point "we ran detector X" stops being a
+reproducible statement: two people can run the same detector on the same document, make
+different unremarked choices, and disagree by more than the human/machine difference.
+
+**First measured result (2026-08-02), on six real technical documents:**
+
+| Preprocessor | mean \|shift\| | max \|shift\| |
+|---|---:|---:|
+| `prose_only` (the usual composite) | **0.270** | **0.455** |
+| `strip_markdown` | 0.142 | 0.298 |
+| `strip_code` | 0.087 | 0.318 |
+| `strip_urls` | 0.022 | 0.086 |
+| `strip_front_matter` | 0.011 | 0.041 |
+| `collapse_whitespace` | 0.000 | 0.000 |
+
+For scale, the same detector's human/machine signal gap on the labelled fixture is
+**0.151**. **This does not license the ratio it invites.** The two numbers come from
+different document sets — twelve short prose samples versus six long markdown files — and
+dividing across sets is not a valid ratio. The tool refuses to print one for exactly this
+reason: `sensitivity_ratio` is `None` without labels, and the unlabelled table shows `n/a`.
+The comparison is suggestive and nothing more. Obtaining a real ratio requires a labelled
+corpus of markdown-shaped documents, which is another reason to wire RAID.
+
+Two secondary findings the slice produces for free:
+
+- **`collapse_whitespace` is provably free.** Zero shift, every document. Not every pipeline
+  choice is dangerous, and a benchmark that implied otherwise would be crying wolf.
+- **A preprocessor can push a document below the refusal gate.** Stripping code from a
+  code-heavy document can leave too little prose to judge, so a detector that scored it
+  before will now decline. This surfaces as `newly refused` in the table — the same document
+  and the same tool giving a different answer about whether an answer is possible at all.
+
 ## 4. Corpora
 
 The fixture shipped in `detbench.data.fixtures` is a **smoke test with twelve documents**

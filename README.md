@@ -77,6 +77,19 @@ run on a bare Python 3.11. Model-based detectors are an optional extra
 - `synonym` — a small hand-checked substitution table. Deliberately weaker than a real
   paraphraser: if this floor already moves a detector, the detector is fragile.
 
+**Preprocessing sensitivity** (`detbench sensitivity [files...]`)
+
+Attacks measure what an adversary does to you. This measures what *you* do to yourself —
+the pipeline choices nobody writes down. Strip the code blocks or don't; drop the front
+matter or don't. On six real technical documents, the usual composite (`prose_only`) moved
+scores by a mean of **0.270**, against a human/machine signal gap of 0.151 for the same
+detector. Suggestive, not conclusive — those come from different document sets, so the tool
+prints `n/a` for the ratio rather than dividing across them.
+
+The point stands regardless of the exact figure: if an unremarked plumbing decision moves
+the answer as far as the signal does, then "we ran detector X" is not a reproducible claim.
+`collapse_whitespace`, for contrast, is provably free — zero shift on every document.
+
 ## Two rules the code enforces, not just documents
 
 **Refusal is a result.** A detector may return "I decline" instead of a score, and short

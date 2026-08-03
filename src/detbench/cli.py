@@ -81,6 +81,51 @@ def cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_raid_fetch(args: argparse.Namespace) -> int:
+    from .data import raid
+
+    size = raid.APPROX_BYTES.get((args.split, args.adversarial), 0)
+    if args.sample_mb:
+        print(f"fetching first {args.sample_mb} MB of RAID {args.split} (range request)")
+    else:
+        print(f"fetching RAID {args.split} — approximately {size / 1e6:.0f} MB")
+    path = raid.download(
+        args.split,
+        adversarial=args.adversarial,
+        max_bytes=int(args.sample_mb * 1e6) if args.sample_mb else None,
+        force=args.force,
+    )
+    print(f"cached at {path} ({path.stat().st_size / 1e6:.1f} MB)")
+    print(f"  {raid.CITATION}")
+    return 0
+
+
+def cmd_raid(args: argparse.Namespace) -> int:
+    from .data import raid
+
+    try:
+        docs = raid.load(
+            split=args.split,
+            adversarial=args.adversarial,
+            domains=set(args.domains) if args.domains else None,
+            limit_per_class=args.limit,
+            seed=args.seed,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        # These carry the diagnostic (which domains are actually present, which command
+        # to run); a traceback would bury it.
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(raid.describe(docs), "\n")
+
+    detectors = [build_detector(k) for k in args.detectors]
+    reports = run(detectors, docs, args.attacks, seed=args.seed)
+    print(render_table(reports))
+    print("\nnotes:")
+    print(render_notes(reports))
+    return 0
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     print(f"!! {SMOKE_WARNING}\n")
     docs = load_smoke()
@@ -116,6 +161,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     dm.add_argument("--seed", type=int, default=0)
     dm.set_defaults(func=cmd_demo)
+
+    rf = sub.add_parser("raid-fetch", help="download a RAID split into the cache")
+    rf.add_argument("--split", default="train", choices=sorted(["train", "extra", "test"]))
+    rf.add_argument("--adversarial", action="store_true", help="the attacked variant (much larger)")
+    rf.add_argument("--sample-mb", type=float, default=0, help="fetch only a prefix, in MB")
+    rf.add_argument("--force", action="store_true")
+    rf.set_defaults(func=cmd_raid_fetch)
+
+    rd = sub.add_parser("raid", help="run the bench on a RAID subset")
+    rd.add_argument("--split", default="train", choices=["train", "extra"])
+    rd.add_argument("--adversarial", action="store_true")
+    rd.add_argument("--limit", type=int, default=500, help="documents per class")
+    rd.add_argument("--domains", nargs="*", default=None, help="default: English prose only")
+    rd.add_argument("--detectors", nargs="+", default=["stylometric"])
+    rd.add_argument("--attacks", nargs="*", default=["homoglyph", "zero_width", "synonym"])
+    rd.add_argument("--seed", type=int, default=0)
+    rd.set_defaults(func=cmd_raid)
 
     sn = sub.add_parser(
         "sensitivity",

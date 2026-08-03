@@ -50,6 +50,30 @@ smallest rate you could even observe is 17% — so the harness refuses to print 
 rather than inventing one. Most published detector claims are built on samples not much
 larger.
 
+For real numbers, use RAID (Dugan et al., ACL 2024 — 6.2M generations, 11 generators,
+11 domains, MIT licensed):
+
+```bash
+detbench raid-fetch --split train   # 802 MB, cached under ~/.cache/detbench
+detbench raid --limit 2500          # 2,500 documents per class
+```
+
+**The first real result, and the reason this project exists:**
+
+| slice | TPR@1%FPR | TPR@0.1%FPR | AUROC |
+|---|---:|---:|---:|
+| clean | 41.1% | **29.3%** | **0.766** |
+| homoglyph | 38.0% | 26.3% | 0.746 |
+| zero_width | 39.4% | 26.4% | 0.755 |
+| synonym | 41.1% | 29.3% | 0.766 |
+
+An AUROC of 0.766 reads as a usable tool. Catching **29.3%** of machine text at a
+false-positive rate you could defend to the person being accused does not. Same detector,
+same documents — and only one of those numbers is the one anyone publishes.
+
+(That is a deliberately weak detector, so treat it as a floor for the benchmark rather than
+a claim about the field. The strong ones are implemented but unvalidated — see below.)
+
 The core package has **no dependencies**. Metrics, attacks, and the stylometric baseline
 run on a bare Python 3.11. Model-based detectors are an optional extra
 (`pip install detbench[torch]`), and if torch is missing they *refuse* rather than fail.
@@ -110,12 +134,16 @@ type error rather than a style guideline.
 - **Detection failures are not evenly distributed.** False positives fall hardest on
   non-native English writers and on formulaic human prose. A tool that is 99% accurate
   overall can still be systematically wrong about one group of people.
-- **The included detector implementations are not yet validated** against their reference
-  implementations. Until `scripts/validate.py` reproduces published numbers on a shared
-  slice, treat any output as indicative. This is a release blocker for publishing a
-  leaderboard, and it is tracked as such.
-- **The shipped fixture is a smoke test, not an evaluation set.** Real runs use RAID,
-  MAGE, and PADBen — see [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
+- **The model-bearing detectors are not yet validated** against their reference
+  implementations. Binoculars and Fast-DetectGPT are implemented but unchecked, so no
+  leaderboard row may be published from them. This is a release blocker, tracked as such.
+- **The shipped fixture is a smoke test, not an evaluation set.** RAID is wired up; MAGE
+  and PADBen are not — see [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
+- **This project has already been wrong once in public, and left the evidence in.** An
+  earlier revision reported the stylometric baseline scoring *below chance* and concluded
+  its feature signs were inverted. On real data it scores 0.766. Twelve documents were not
+  enough to tell, and the conclusion drawn from them was wrong — which is the point the
+  fixture warnings were making, demonstrated against their own author.
 
 ## Status
 

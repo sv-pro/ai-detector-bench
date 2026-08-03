@@ -135,7 +135,72 @@ Real evaluation uses:
 - **PADBen** (arXiv:2511.00416) — iterated paraphrase, with a five-type taxonomy covering
   the path from original text to deeply laundered text.
 
-None of these are wired up yet. That is the next piece of work.
+**RAID is wired up** (`detbench.data.raid`, 2026-08-02). MAGE and PADBen are not.
+
+### Using RAID
+
+```bash
+detbench raid-fetch --split train      # 802 MB, cached under ~/.cache/detbench
+detbench raid --limit 2500             # 2,500 documents per class
+```
+
+Three defaults are methodology choices rather than conveniences, and each is something a
+caller could get silently wrong:
+
+- **English prose only.** RAID includes a `code` domain — the human rows are literally
+  Python source — and two non-English domains (`czech`, `german`). Scoring source code with
+  a detector whose features are sentence-length variance and discourse markers produces a
+  number with no meaning, and given that false positives already concentrate on non-native
+  English writers, silently mixing languages is worse than useless. Both are opt-in.
+- **Non-adversarial by default.** RAID ships pre-attacked rows and `detbench` applies its
+  own attacks; loading both would measure a compound transform nobody deploys. When you do
+  opt in, the overlap is useful: RAID's `homoglyph`, `zero_width_space` and `synonym` are
+  reference implementations of three attacks here, so the same source documents can check
+  ours against theirs.
+- **Balanced classes.** RAID's natural ratio is roughly 1 human document to 11 machine,
+  because each human text seeds a generation from every model. Reporting a false-positive
+  rate off that ratio would rest on a small human sample while looking like a large study.
+
+**A trap worth naming: the `extra` split is not "more of the same."** Verified against the
+real files — it contains *only* `code` (32,200 rows), `german` (68,950) and `czech`
+(68,775). The eight English prose domains are all in `train`. Loading `extra` with the
+default prose filter correctly matches nothing, so `load` raises with the domains actually
+present rather than returning an empty list.
+
+### First result on real data (2026-08-02)
+
+`stylometric`, 5,000 documents (2,500 human / 2,500 machine), 12 generators, 8 English
+prose domains, seed 0:
+
+| slice | refused | TPR@1%FPR | TPR@0.1%FPR | AUROC |
+|---|---:|---:|---:|---:|
+| clean | 0.7% | **41.1%** | **29.3%** | 0.766 |
+| homoglyph | 0.7% | 38.0% | 26.3% | 0.746 |
+| zero_width | 0.7% | 39.4% | 26.4% | 0.755 |
+| synonym | 0.7% | 41.1% | 29.3% | 0.766 |
+
+**This single row is the argument the whole metric design was built to make.** An AUROC of
+0.766 reads as a usable tool. Catching 29.3% of machine text at a false-positive rate you
+could defend to the person being accused does not. Same detector, same documents, two
+completely different impressions — and only one of them is the number anyone publishes.
+
+Secondary observations: the synonym attack has *zero* effect on a feature-based detector
+(41.1% → 41.1%), consistent with the published finding that text-feature models are the
+most paraphrase-resilient; the two Unicode attacks cost 2–3 points, which is the tokenizer
+being perturbed rather than the style; and this is a **weak** detector, so these numbers are
+a floor for the benchmark, not a claim about the field.
+
+### Correction: the below-chance result was a fixture artifact
+
+An earlier revision of this document recorded that the unfitted stylometric baseline scored
+**below chance** (AUROC 0.444, signal gap −0.151) and inferred that its hand-assigned
+feature signs were "wrong-signed on net." **On 5,000 real documents it scores 0.766.** The
+signs are fine; twelve documents were not enough to tell, and the conclusion drawn from them
+was wrong.
+
+That correction is left in rather than quietly edited out, because it is the clearest
+possible demonstration of the point the fixture warnings were already making — including
+against the person who wrote them.
 
 ## 5. What this benchmark cannot currently claim
 

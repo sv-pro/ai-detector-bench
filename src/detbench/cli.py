@@ -15,7 +15,7 @@ from . import __version__
 from .attacks import available as available_attacks
 from .data.fixtures import SMOKE_WARNING, load_smoke
 from .detectors import available as available_detectors, build as build_detector
-from .harness import render_notes, render_table, run
+from .harness import recovery_table, render_notes, render_table, run
 from .preprocessing import available as available_preprocessors
 from .sensitivity import measure
 from .sensitivity import render_notes as sensitivity_notes
@@ -128,8 +128,11 @@ def cmd_raid(args: argparse.Namespace) -> int:
         )
         for k in args.detectors
     ]
-    reports = run(detectors, docs, args.attacks, seed=args.seed)
+    reports = run(detectors, docs, args.attacks, defences=args.defences, seed=args.seed)
     print(render_table(reports))
+    if args.defences:
+        print()
+        print(recovery_table(reports))
     print("\nnotes:")
     print(render_notes(reports))
     return 0
@@ -186,6 +189,12 @@ def main(argv: list[str] | None = None) -> int:
     rd.add_argument("--detectors", nargs="+", default=["stylometric"])
     rd.add_argument("--attacks", nargs="*", default=["homoglyph", "zero_width", "synonym"])
     rd.add_argument("--seed", type=int, default=0)
+    rd.add_argument(
+        "--defences",
+        nargs="*",
+        default=[],
+        help="preprocessors applied to every document before scoring, e.g. unicode_fold",
+    )
     rd.add_argument("--device", default=None, help="cpu or cuda; default auto-detect")
     rd.add_argument(
         "--dtype",

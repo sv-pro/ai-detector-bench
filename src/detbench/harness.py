@@ -18,24 +18,63 @@ from .attacks import build as build_attack
 from .attacks.base import Attack
 from .core import Detector, Verdict, score_many
 from .data.fixtures import Document
+from .preprocessing import get as get_preprocessor
 from .metrics import Report, evaluate
 
 
 @dataclass(frozen=True)
 class Slice:
-    """One labelled evaluation set, already transformed if an attack applies."""
+    """One labelled evaluation set, already transformed if an attack applies.
+
+    `attack` and `defence` are kept separately from `name` so `recovery_table` can pair a
+    defended slice with its undefended counterpart without parsing strings.
+    """
 
     name: str
     texts: list[str]
     labels: list[int]
+    attack: str | None = None
+    defence: str | None = None
     mean_edit_rate: float | None = None
 
 
-def build_slices(docs: list[Document], attacks: list[Attack], seed: int = 0) -> list[Slice]:
-    """The clean slice, plus one slice per attack with machine text transformed."""
-    texts = [d.text for d in docs]
+def build_slices(
+    docs: list[Document],
+    attacks: list[Attack],
+    defences: list[str] | None = None,
+    seed: int = 0,
+) -> list[Slice]:
+    """Clean and attacked slices, each optionally repeated with a defence applied.
+
+    **The defence is applied to every document, human and machine alike.** A deployment
+    normalises whatever arrives; it does not know which documents were attacked, and it
+    cannot apply a repair selectively. Defending only the attacked half would measure a
+    capability nobody has and would flatter the defence.
+    """
     labels = [d.label for d in docs]
-    slices = [Slice(name="clean", texts=texts, labels=labels)]
+    defences = defences or []
+
+    def variants(name: str, texts: list[str], attack: str | None, edit: float | None):
+        out = [
+            Slice(
+                name=name, texts=texts, labels=labels, attack=attack, mean_edit_rate=edit
+            )
+        ]
+        for key in defences:
+            pre = get_preprocessor(key)
+            out.append(
+                Slice(
+                    name=f"{name} +{key}",
+                    texts=[pre.apply(t) for t in texts],
+                    labels=labels,
+                    attack=attack,
+                    defence=key,
+                    mean_edit_rate=edit,
+                )
+            )
+        return out
+
+    slices = variants("clean", [d.text for d in docs], None, None)
 
     for atk in attacks:
         out_texts: list[str] = []
@@ -47,23 +86,25 @@ def build_slices(docs: list[Document], attacks: list[Attack], seed: int = 0) -> 
                 edits.append(res.edit_rate)
             else:
                 out_texts.append(d.text)
-        slices.append(
-            Slice(
-                name=f"attack:{atk.name}",
-                texts=out_texts,
-                labels=labels,
-                mean_edit_rate=(sum(edits) / len(edits)) if edits else None,
-            )
+        slices += variants(
+            f"attack:{atk.name}",
+            out_texts,
+            atk.name,
+            (sum(edits) / len(edits)) if edits else None,
         )
     return slices
 
 
 def run(
-    detectors: list[Detector], docs: list[Document], attack_keys: list[str], seed: int = 0
+    detectors: list[Detector],
+    docs: list[Document],
+    attack_keys: list[str],
+    defences: list[str] | None = None,
+    seed: int = 0,
 ) -> list[Report]:
     """Score every detector on every slice. Returns one Report per (detector, slice)."""
     attacks = [build_attack(k) for k in attack_keys]
-    slices = build_slices(docs, attacks, seed=seed)
+    slices = build_slices(docs, attacks, defences=defences, seed=seed)
 
     reports: list[Report] = []
     for det in detectors:
@@ -71,6 +112,64 @@ def run(
             verdicts: list[Verdict] = score_many(det, sl.texts)
             reports.append(evaluate(det.name, sl.name, sl.labels, verdicts))
     return reports
+
+
+def recovery_table(reports: list[Report], metric: str = "tpr_at_1pct") -> str:
+    """How much of each attack's damage a defence undoes.
+
+        recovery = (defended - attacked) / (clean - attacked)
+
+    100% means the defence fully restored clean-text performance; 0% means it did nothing;
+    a negative value means it made matters worse. Undefined — and reported as `n/a` — when
+    the attack did no measurable damage, because dividing by roughly zero would manufacture
+    a dramatic number out of noise.
+    """
+    by_det: dict[str, dict[str, Report]] = {}
+    for r in reports:
+        by_det.setdefault(r.detector, {})[r.slice_name] = r
+
+    rows = []
+    for det, slices in by_det.items():
+        clean = slices.get("clean")
+        if clean is None:
+            continue
+        for name, rep in slices.items():
+            if " +" not in name or name.startswith("clean"):
+                continue
+            undefended = slices.get(name.split(" +")[0])
+            if undefended is None:
+                continue
+            c = getattr(clean, metric)
+            a = getattr(undefended, metric)
+            d = getattr(rep, metric)
+            if c is None or a is None or d is None:
+                rec = None
+            elif abs(c - a) < 1e-9:
+                rec = None  # no damage to recover
+            else:
+                rec = (d - a) / (c - a)
+            rows.append(
+                {
+                    "detector": det,
+                    "slice": name,
+                    "clean": f"{100 * c:.1f}%" if c is not None else "n/a",
+                    "attacked": f"{100 * a:.1f}%" if a is not None else "n/a",
+                    "defended": f"{100 * d:.1f}%" if d is not None else "n/a",
+                    "recovery": "n/a" if rec is None else f"{100 * rec:.0f}%",
+                }
+            )
+
+    if not rows:
+        return "(no defended slices)"
+    headers = list(rows[0].keys())
+    widths = {h: max(len(h), max(len(str(r[h])) for r in rows)) for h in headers}
+
+    def line(cells: dict) -> str:
+        return "  ".join(str(cells[h]).ljust(widths[h]) for h in headers)
+
+    sep = "  ".join("-" * widths[h] for h in headers)
+    title = f"attack recovery under defence ({metric})"
+    return "\n".join([title, "", line({h: h for h in headers}), sep] + [line(r) for r in rows])
 
 
 def render_table(reports: list[Report]) -> str:

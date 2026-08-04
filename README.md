@@ -79,11 +79,30 @@ And note the clean row: the best detector here catches **under 40%** of machine 
 defensible false-positive rate while posting a 0.787 AUROC. That gap is why the operating
 point is reported first.
 
-Two caveats that change how you should read this. These are GPT-2-scale models, not the
-reference Falcon-7B configurations — floors for each method, not published performance. And
-**no input normalisation is applied**: `normalize_unicode` neutralises both Unicode attacks
-entirely, so those rows measure *undefended* detectors. Full detail and the remaining
-caveats in [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md); raw output in `results/`.
+**But that table measures *undefended* detectors, and the defended run changes the
+conclusion.** Running the same attacks against Unicode-normalised input
+(`detbench raid --defences unicode_fold`):
+
+| detector | attack | clean | attacked | defended | recovery |
+|---|---|---:|---:|---:|---:|
+| binoculars | zero_width | 49.7% | 14.7% | **49.7%** | **100%** |
+| fast-detectgpt | zero_width | 51.3% | 18.1% | **51.3%** | **100%** |
+| fast-detectgpt | synonym | 51.3% | 50.0% | 50.0% | 0% |
+
+*(TPR@1%FPR. Full table in [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) § 3c.)*
+
+One normalisation pass restores both detectors **completely**, and the ordering reverts to
+fast-detectgpt > binoculars > stylometric. So the honest claim is not *"Unicode attacks break
+these detectors"* — it's **"Unicode attacks break these detectors in any deployment that
+forgets to normalise, and the repair is one function call."** The first version is the more
+exciting headline and it would have been wrong.
+
+The `synonym` row at 0% is the control that makes the rest believable: a Unicode defence
+cannot touch a lexical substitution, and it doesn't. A defence that repaired everything would
+mean a broken harness, not a good defence.
+
+One caveat stands regardless: these are GPT-2-scale models, not the reference Falcon-7B
+configurations — floors for each method, not published performance. Raw output in `results/`.
 
 The core package has **no dependencies**. Metrics, attacks, and the stylometric baseline
 run on a bare Python 3.11. Model-based detectors are an optional extra

@@ -236,11 +236,8 @@ Two further observations:
    `gpt2`/`gpt2-medium`, not the Falcon-7B pair; Fast-DetectGPT is single-model `gpt2-medium`,
    not `gpt-j-6B`→`gpt-neo-2.7B`. Treat every number as a floor for the method, not as the
    published performance of it.
-2. **No input normalisation is applied, and that is the whole story for the Unicode rows.**
-   `attacks.lexical.normalize_unicode` neutralises both `homoglyph` and `zero_width`
-   completely. These rows measure *undefended* detectors. A defended-variant slice is the
-   obvious next piece of work, and until it exists this table should be read as "what happens
-   if you do not normalise", not "these methods are broken".
+2. **No input normalisation is applied in the table above.** ✅ **Now measured — see § 3c,
+   which changes the conclusion.** The collapse is entirely an artifact of not normalising.
 3. **The run hit GPU memory pressure.** A CUDA caching-allocator OOM warning appears in the
    Binoculars section of `results/raid_full.txt`. The allocator recovered; the results were
    checked afterwards against CPU on the same documents (worst difference **8.7e-06**) and
@@ -250,6 +247,59 @@ Two further observations:
    5.8e-06 (Binoculars) and 1.6e-04 (Fast-DetectGPT) — the latter slightly exceeding the 1e-4
    tolerance the validation scripts use. cuBLAS non-determinism, not a defect, but it means
    these numbers are not the exact ones equivalence was established at.
+
+## 3c. The defended variant — and the correction it forces
+
+The table above measures *undefended* detectors. Running the same attacks against
+Unicode-normalised input (`--defences unicode_fold`, 3,000 documents, seed 0) answers the
+question it left open, and the answer revises the headline.
+
+**Recovery** = `(defended − attacked) / (clean − attacked)`. 100% means clean performance
+fully restored.
+
+| detector | attack | clean | attacked | defended | recovery |
+|---|---|---:|---:|---:|---:|
+| binoculars | homoglyph | 49.7% | 20.4% | **49.7%** | **100%** |
+| binoculars | zero_width | 49.7% | 14.7% | **49.7%** | **100%** |
+| binoculars | synonym | 49.7% | 47.9% | 47.9% | 0% |
+| fast-detectgpt | homoglyph | 51.3% | 23.4% | **51.3%** | **100%** |
+| fast-detectgpt | zero_width | 51.3% | 18.1% | **51.3%** | **100%** |
+| fast-detectgpt | synonym | 51.3% | 50.0% | 50.0% | 0% |
+| stylometric | homoglyph | 38.7% | 36.5% | 39.0% | 112% |
+| stylometric | zero_width | 38.7% | 36.6% | 39.0% | 113% |
+| stylometric | synonym | 38.7% | 38.7% | 39.0% | n/a |
+
+**The correction.** The undefended table's dramatic result — model-based detectors
+collapsing to near-chance under a free attack, the ordering inverting — **survives only in
+deployments that do not normalise their input.** One normalisation pass restores both
+detectors completely, and the ordering reverts to fast-detectgpt > binoculars > stylometric.
+
+The right statement is therefore not *"Unicode attacks break these detectors"* but
+**"Unicode attacks break these detectors in any deployment that forgets to normalise, and
+that repair is one function call."** The first framing is more exciting and would have been
+wrong.
+
+**The defence is free at the aggregate level, but it is not a no-op.** `clean +unicode_fold`
+is identical to `clean` to three decimal places for both model-bearing detectors. That is a
+measured result, not an untouched slice: **103 of 3,000 documents differ** after folding, and
+their Binoculars scores move by up to 4.2e-02. The per-document changes simply do not shift
+the aggregate metric. Checked explicitly, because "the defence costs nothing" and "the
+defence was never applied" produce identical tables.
+
+**0% recovery on `synonym` is the control that makes the rest credible.** A Unicode defence
+cannot touch a lexical substitution, and it doesn't. A defence that appeared to repair
+everything would indicate a bug in the harness rather than a good defence.
+
+**Why stylometric exceeds 100%.** Its defended-under-attack result (39.0%) beats its
+*undefended clean* result (38.7%), because folding also removes naturally-occurring Unicode
+noise from documents nobody attacked. The `clean +unicode_fold` control prices exactly this;
+without it the >100% figure would look like an error instead of a real independent effect.
+
+**A defence is never free in general**, even though this one is cheap here. `unicode_fold`
+rewrites legitimate text: 411 of 1,500 RAID documents contain non-ASCII, and folding alters
+61 of them even on the *synonym* slice where no Unicode attack occurred. Under the Unicode
+attacks it restores 1,439 of 1,500 documents to their original form — not all of them. Any
+new defence must therefore be measured on `clean` as well as under attack.
 
 ### Correction: the below-chance result was a fixture artifact
 

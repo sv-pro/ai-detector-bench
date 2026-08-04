@@ -1,0 +1,52 @@
+# RAID full run — 2026-08-03T20:19:19Z
+# limit 1500/class, seed 0, device cuda, dtype float32
+
+### stylometric
+RAID subset: 3000 docs (1500 human / 1500 machine), 12 generators, domains: books=421, recipes=408, poetry=401, news=401, wiki=394, abstracts=392
+  Dugan et al., RAID (ACL 2024), arXiv:2405.07940, MIT licensed 
+
+detector     slice              n     refused  TPR@1%FPR  TPR@0.1%FPR  human called machine (p>=.95)  AUROC
+-----------  -----------------  ----  -------  ---------  -----------  -----------------------------  -----
+stylometric  clean              3000  0.6%     38.7%      11.7%        n/a                            0.756
+stylometric  attack:homoglyph   3000  0.6%     36.5%      9.6%         n/a                            0.738
+stylometric  attack:zero_width  3000  0.6%     36.6%      10.6%        n/a                            0.744
+stylometric  attack:synonym     3000  0.6%     38.7%      11.7%        n/a                            0.756
+
+notes:
+  - 'human called machine' is n/a for uncalibrated detectors, which report a raw score and no probability. That is the honest default, not a missing feature.
+  - Refused documents are excluded from every rate above. A high refusal rate next to a high TPR means the detector answered only the easy documents.
+  - AUROC is reported last on purpose: it averages over operating points nobody deploys, and can stay high while most human text is being mislabelled.
+
+### binoculars-small
+RAID subset: 3000 docs (1500 human / 1500 machine), 12 generators, domains: books=421, recipes=408, poetry=401, news=401, wiki=394, abstracts=392
+  Dugan et al., RAID (ACL 2024), arXiv:2405.07940, MIT licensed 
+
+[W803 23:20:07.523647749 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 104857600 bytes (free: 143654912, total: 3887857664).
+detector                      slice              n     refused  TPR@1%FPR  TPR@0.1%FPR  human called machine (p>=.95)  AUROC
+----------------------------  -----------------  ----  -------  ---------  -----------  -----------------------------  -----
+binoculars[gpt2/gpt2-medium]  clean              3000  0.6%     49.7%      38.4%        n/a                            0.781
+binoculars[gpt2/gpt2-medium]  attack:homoglyph   3000  0.6%     20.4%      8.5%         n/a                            0.734
+binoculars[gpt2/gpt2-medium]  attack:zero_width  3000  0.6%     14.7%      7.7%         n/a                            0.618
+binoculars[gpt2/gpt2-medium]  attack:synonym     3000  0.6%     47.9%      36.2%        n/a                            0.777
+
+notes:
+  - 'human called machine' is n/a for uncalibrated detectors, which report a raw score and no probability. That is the honest default, not a missing feature.
+  - Refused documents are excluded from every rate above. A high refusal rate next to a high TPR means the detector answered only the easy documents.
+  - AUROC is reported last on purpose: it averages over operating points nobody deploys, and can stay high while most human text is being mislabelled.
+
+### fast-detectgpt
+RAID subset: 3000 docs (1500 human / 1500 machine), 12 generators, domains: books=421, recipes=408, poetry=401, news=401, wiki=394, abstracts=392
+  Dugan et al., RAID (ACL 2024), arXiv:2405.07940, MIT licensed 
+
+detector                     slice              n     refused  TPR@1%FPR  TPR@0.1%FPR  human called machine (p>=.95)  AUROC
+---------------------------  -----------------  ----  -------  ---------  -----------  -----------------------------  -----
+fast_detectgpt[gpt2-medium]  clean              3000  0.6%     51.3%      38.7%        n/a                            0.787
+fast_detectgpt[gpt2-medium]  attack:homoglyph   3000  0.6%     23.4%      13.7%        n/a                            0.616
+fast_detectgpt[gpt2-medium]  attack:zero_width  3000  0.6%     18.1%      10.6%        n/a                            0.548
+fast_detectgpt[gpt2-medium]  attack:synonym     3000  0.6%     50.0%      37.8%        n/a                            0.783
+
+notes:
+  - 'human called machine' is n/a for uncalibrated detectors, which report a raw score and no probability. That is the honest default, not a missing feature.
+  - Refused documents are excluded from every rate above. A high refusal rate next to a high TPR means the detector answered only the easy documents.
+  - AUROC is reported last on purpose: it averages over operating points nobody deploys, and can stay high while most human text is being mislabelled.
+

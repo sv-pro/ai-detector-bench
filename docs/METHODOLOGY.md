@@ -190,6 +190,67 @@ most paraphrase-resilient; the two Unicode attacks cost 2–3 points, which is t
 being perturbed rather than the style; and this is a **weak** detector, so these numbers are
 a floor for the benchmark, not a claim about the field.
 
+### Full run, all three detectors (2026-08-03)
+
+3,000 documents (1,500 human / 1,500 machine), 12 generators, 8 English prose domains,
+seed 0, GPU, float32. Raw output in `results/raid_full.txt`.
+
+| detector | slice | TPR@1%FPR | TPR@0.1%FPR | AUROC |
+|---|---|---:|---:|---:|
+| stylometric | clean | 38.7% | 11.7% | 0.756 |
+| binoculars | clean | 49.7% | 38.4% | 0.781 |
+| fast-detectgpt | clean | **51.3%** | **38.7%** | **0.787** |
+| stylometric | homoglyph | 36.5% | 9.6% | 0.738 |
+| binoculars | homoglyph | 20.4% | 8.5% | 0.734 |
+| fast-detectgpt | homoglyph | 23.4% | 13.7% | 0.616 |
+| stylometric | zero_width | **36.6%** | **10.6%** | **0.744** |
+| binoculars | zero_width | 14.7% | 7.7% | 0.618 |
+| fast-detectgpt | zero_width | 18.1% | 10.6% | 0.548 |
+| stylometric | synonym | 38.7% | 11.7% | 0.756 |
+| binoculars | synonym | 47.9% | 36.2% | 0.777 |
+| fast-detectgpt | synonym | 50.0% | 37.8% | 0.783 |
+
+**The ordering inverts, and that is the result.** On clean text the ranking is
+fast-detectgpt > binoculars > stylometric. Under `zero_width` it is
+stylometric > fast-detectgpt > binoculars. **The weakest detector on clean text is the
+strongest under the cheapest available attack.**
+
+`zero_width` inserts invisible characters between words. It costs an evader seconds, leaves
+the rendered document byte-identical to a reader, and takes Fast-DetectGPT from AUROC 0.787
+to **0.548** — within a whisker of a coin flip — while the stylometric baseline moves 0.756
+to 0.744. This independently reproduces the accuracy/robustness inversion reported for
+paraphrase attacks in arXiv:2605.14240, except that the attack here is *free* rather than
+requiring a paraphrase model.
+
+Two further observations:
+
+- **Even undisturbed, the best detector catches under 40% of machine text** at a
+  false-positive rate you could defend, while its AUROC reads 0.787. The gap between those
+  two numbers is the reason this project reports the operating point first.
+- **The synonym attack does almost nothing to anything** (≤1.4 points). Our synonym table is
+  deliberately tiny, so this is a floor, not evidence that lexical substitution is harmless.
+
+**Load-bearing caveats.**
+
+1. **These are GPT-2-scale models, not the reference configurations.** Binoculars is
+   `gpt2`/`gpt2-medium`, not the Falcon-7B pair; Fast-DetectGPT is single-model `gpt2-medium`,
+   not `gpt-j-6B`→`gpt-neo-2.7B`. Treat every number as a floor for the method, not as the
+   published performance of it.
+2. **No input normalisation is applied, and that is the whole story for the Unicode rows.**
+   `attacks.lexical.normalize_unicode` neutralises both `homoglyph` and `zero_width`
+   completely. These rows measure *undefended* detectors. A defended-variant slice is the
+   obvious next piece of work, and until it exists this table should be read as "what happens
+   if you do not normalise", not "these methods are broken".
+3. **The run hit GPU memory pressure.** A CUDA caching-allocator OOM warning appears in the
+   Binoculars section of `results/raid_full.txt`. The allocator recovered; the results were
+   checked afterwards against CPU on the same documents (worst difference **8.7e-06**) and
+   refusal rates are identical across all three detectors (0.6%), so nothing was dropped or
+   corrupted. Recorded because the warning is in the raw output and a reader will see it.
+4. **GPU float32 is not bit-identical to the validated CPU float32.** Measured deltas are
+   5.8e-06 (Binoculars) and 1.6e-04 (Fast-DetectGPT) — the latter slightly exceeding the 1e-4
+   tolerance the validation scripts use. cuBLAS non-determinism, not a defect, but it means
+   these numbers are not the exact ones equivalence was established at.
+
 ### Correction: the below-chance result was a fixture artifact
 
 An earlier revision of this document recorded that the unfitted stylometric baseline scored

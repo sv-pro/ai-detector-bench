@@ -58,21 +58,32 @@ detbench raid-fetch --split train   # 802 MB, cached under ~/.cache/detbench
 detbench raid --limit 2500          # 2,500 documents per class
 ```
 
-**The first real result, and the reason this project exists:**
+**The result, on 3,000 RAID documents across 12 generators and 8 domains:**
 
-| slice | TPR@1%FPR | TPR@0.1%FPR | AUROC |
-|---|---:|---:|---:|
-| clean | 41.1% | **29.3%** | **0.766** |
-| homoglyph | 38.0% | 26.3% | 0.746 |
-| zero_width | 39.4% | 26.4% | 0.755 |
-| synonym | 41.1% | 29.3% | 0.766 |
+| detector | clean | homoglyph | zero_width | synonym |
+|---|---:|---:|---:|---:|
+| | *AUROC / TPR@0.1%FPR* | | | |
+| stylometric | 0.756 / 11.7% | 0.738 / 9.6% | **0.744 / 10.6%** | 0.756 / 11.7% |
+| binoculars | 0.781 / 38.4% | 0.734 / 8.5% | 0.618 / 7.7% | 0.777 / 36.2% |
+| fast-detectgpt | **0.787 / 38.7%** | 0.616 / 13.7% | 0.548 / 10.6% | 0.783 / 37.8% |
 
-An AUROC of 0.766 reads as a usable tool. Catching **29.3%** of machine text at a
-false-positive rate you could defend to the person being accused does not. Same detector,
-same documents — and only one of those numbers is the one anyone publishes.
+**The ordering inverts, and that is the finding.** On clean text: fast-detectgpt > binoculars
+> stylometric. Under `zero_width`: stylometric > fast-detectgpt > binoculars. **The weakest
+detector on clean text is the strongest under the cheapest available attack.**
 
-(That is a deliberately weak detector, so treat it as a floor for the benchmark rather than
-a claim about the field. The strong ones are implemented but unvalidated — see below.)
+`zero_width` inserts invisible characters between words. It costs seconds, leaves the
+document visually identical, and drops Fast-DetectGPT from 0.787 AUROC to **0.548** — a coin
+flip — while the twelve-feature baseline moves 0.756 → 0.744.
+
+And note the clean row: the best detector here catches **under 40%** of machine text at a
+defensible false-positive rate while posting a 0.787 AUROC. That gap is why the operating
+point is reported first.
+
+Two caveats that change how you should read this. These are GPT-2-scale models, not the
+reference Falcon-7B configurations — floors for each method, not published performance. And
+**no input normalisation is applied**: `normalize_unicode` neutralises both Unicode attacks
+entirely, so those rows measure *undefended* detectors. Full detail and the remaining
+caveats in [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md); raw output in `results/`.
 
 The core package has **no dependencies**. Metrics, attacks, and the stylometric baseline
 run on a bare Python 3.11. Model-based detectors are an optional extra

@@ -1,5 +1,7 @@
 # detbench
 
+[![CI](https://github.com/sv-pro/ai-detector-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/sv-pro/ai-detector-bench/actions/workflows/ci.yml)
+
 **A referee for AI-text detectors.**
 
 This project does not claim to tell you whether a piece of writing was produced by a

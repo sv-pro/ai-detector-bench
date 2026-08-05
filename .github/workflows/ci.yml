@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Verifies the claim the README makes: the core package has NO dependencies.
+  # Installed bare, it must import and its core tests must pass. If someone adds a
+  # third-party import to the core, this job fails while the full one stays green —
+  # which is the whole reason it exists as a separate job.
+  core-no-deps:
+    name: core (no dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install with no extras
+        run: pip install -e .
+      - name: Assert nothing third-party crept into the core
+        run: |
+          python -c "import detbench; print('detbench', detbench.__version__)"
+          python - <<'PY'
+          import subprocess, sys
+          installed = subprocess.run(
+              [sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True
+          ).stdout.lower()
+          forbidden = ["torch", "transformers", "numpy", "scipy", "pandas"]
+          found = [f for f in forbidden if f"{f}==" in installed]
+          assert not found, f"core install pulled in {found}"
+          print("core install is dependency-free")
+          PY
+      - name: Run the dependency-free tests
+        run: |
+          pip install pytest
+          pytest -q
+
+  # Everything, including the synthetic-logit regression guards for the two validated
+  # detectors. CPU torch only — no model downloads, no network at test time.
+  full:
+    name: full (torch, ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install with CPU torch
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev,torch]"
+      - name: Run the full suite
+        run: pytest -q
+      - name: Assert the detector regression guards actually ran
+        # These skip silently when torch is missing. A green suite that skipped the
+        # validated-maths tests would be indistinguishable from one that ran them.
+        run: |
+          pytest tests/test_binoculars.py tests/test_fast_detectgpt.py -q \
+            | tee /tmp/out.txt
+          grep -qE "^[0-9]+ passed" /tmp/out.txt
+          if grep -q "skipped" /tmp/out.txt; then
+            echo "detector tests were SKIPPED — torch missing in the full job"; exit 1
+          fi

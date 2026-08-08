@@ -191,10 +191,35 @@ type error rather than a style guideline.
 
 ## Status
 
-Early. The contracts, metrics, attacks, harness, and the no-model baseline are implemented
-and tested. The model-bearing detectors are implemented but unvalidated. There is no
-leaderboard yet, because publishing one before validation would be exactly the behaviour
-this project exists to criticise.
+Early, but no longer only scaffolding. The contracts, metrics, attacks, harness and the
+no-model baseline are implemented and tested — **107 tests, CI green**. **Both
+model-bearing detectors are validated** against reference implementations as of
+2026-08-03: Binoculars agrees to 2.9e-08, Fast-DetectGPT exactly, and the exact one is the
+*weaker* result. See *What this project does not claim* above for why, and for the sharp
+line between validating an algorithm and reproducing a paper — these are GPT-2-scale
+models, so every number here is a **floor for the method**, not its published performance.
+RAID is wired, and the full three-detector run and the defended variant are committed raw
+under [`results/`](results/).
+
+**There is still no leaderboard, and the reason has changed.** It used to be that
+publishing one before validation would be exactly the behaviour this project exists to
+criticise. That blocker is gone as of 2026-08-03; what remains is that nobody has built the
+page. Worth stating plainly, because *"we are being careful"* and *"we have not got to it"*
+are different sentences and only one of them is still true.
+
+Open, in order: **MAGE**'s leave-one-domain-out split, since the 60.4% finding above is a
+domain-shift result and that is the corpus which tests it; a **model-bearing paraphrase
+attack** of the DIPPER class, because the three shipped attacks are deliberately weaker
+than a real evader's and the defended run showed the Unicode ones are repairable by one
+function call — which makes a *non-repairable* attack the more interesting measurement;
+and the public leaderboard or disagreement viewer.
+
+*This section said the detectors were unvalidated until 2026-08-08 — five days after they
+were, and while the section directly above it said the opposite. The README contradicted
+itself and the stale half was the last thing a reader hit. Corrected in place and noted
+rather than quietly overwritten, for the same reason the below-chance stylometric mistake
+is still described above: a repo that grades other people's claims does not get to silently
+edit its own.*
 
 ## License
 
